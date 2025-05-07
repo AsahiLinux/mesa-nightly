@@ -1,0 +1,44 @@
+# See the documentation for more information:
+# https://packit.dev/docs/configura
+
+specfile_path: mesa.spec
+
+downstream_package_name: mesa
+
+files_to_sync:
+  - mesa.spec
+  - gnome-shell-glthread-disable.patch
+  - Mesa-MLAA-License-Clarification-Email.txt
+  - packit.yaml
+
+actions:
+  get-current-version:
+    - git submodule update --init
+    - bash -c 'cd mesa && git log -n1 --date="format:%Y%m%d" --format="format:$(cut -d- -f1 < VERSION)~%cd^%h"'
+  create-archive:
+    - git submodule update --init
+    # Create an archive file with the ‹mesa› directory prefix
+    #- bash -c 'git ls-files --recurse-submodules | tar --transform "s|^|mesa/|" -caf .packit/mesa.tar.gz -T-'
+    #- echo '.packit/mesa.tar.gz'
+    - bash -c 'git ls-files --recurse-submodules | tar -caf mesa-nightly.tar.gz -T-'
+    - echo 'mesa-nightly.tar.gz'
+  fix-spec-file:
+    - bash -c "sed -i -r \"s/Version:(\s*).*$/Version:\1${PACKIT_PROJECT_VERSION}/\" mesa.spec"
+    - bash -c "(cd mesa && git log -n1 --date=format:\"%a %B %d %Y\" --format=format:\"* %cd packit <packit@asahilinux.org> - ${PACKIT_PROJECT_VERSION}-1%n\") >> mesa.spec"
+    - bash -c '(cd mesa && git log --since "1 day ago" --no-merges --pretty="format:- %s (%an)") >> mesa.spec'
+    - bash -c 'echo "" >>  mesa.spec'
+
+srpm_build_deps:
+  - bash
+  - curl
+  - sed
+  - cut
+
+jobs:
+- job: copr_build
+  trigger: commit
+  owner: "@jannau"
+  project: mesa-nightly
+  targets:
+    - fedora-42-aarch64
+    - fedora-42-x86_64

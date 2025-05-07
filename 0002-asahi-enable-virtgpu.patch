@@ -1,0 +1,41 @@
+From c62730bc0e415f9f3b9cab86244e55a84ec713b4 Mon Sep 17 00:00:00 2001
+From: Alyssa Rosenzweig <alyssa@rosenzweig.io>
+Date: Thu, 24 Apr 2025 11:13:02 -0400
+Subject: [PATCH 2/2] asahi: enable virtgpu
+
+Signed-off-by: Alyssa Rosenzweig <alyssa@rosenzweig.io>
+---
+ src/asahi/lib/agx_device.c        | 3 ---
+ src/asahi/lib/agx_device_virtio.c | 2 +-
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/src/asahi/lib/agx_device.c b/src/asahi/lib/agx_device.c
+index 62462b89424..88ac6c10cd2 100644
+--- a/src/asahi/lib/agx_device.c
++++ b/src/asahi/lib/agx_device.c
+@@ -505,9 +505,6 @@ agx_open_device(void *memctx, struct agx_device *dev)
+          dev->is_virtio = false;
+          dev->ops = agx_device_drm_ops;
+       } else if (!strcmp(version->name, "virtio_gpu")) {
+-         /* TODO: virtio wire protocol is not stable yet */
+-         return false;
+-
+          dev->is_virtio = true;
+          if (!agx_virtio_open_device(dev)) {
+             fprintf(
+diff --git a/src/asahi/lib/agx_device_virtio.c b/src/asahi/lib/agx_device_virtio.c
+index 696f8e306be..fa7facf1bfb 100644
+--- a/src/asahi/lib/agx_device_virtio.c
++++ b/src/asahi/lib/agx_device_virtio.c
+@@ -292,7 +292,7 @@ agx_virtio_open_device(struct agx_device *dev)
+ {
+    struct vdrm_device *vdrm;
+ 
+-   vdrm = vdrm_device_connect(dev->fd, 2);
++   vdrm = vdrm_device_connect(dev->fd, 4);
+    if (!vdrm) {
+       fprintf(stderr, "could not connect vdrm\n");
+       return false;
+-- 
+2.49.0
+

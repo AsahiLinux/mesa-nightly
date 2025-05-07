@@ -1,0 +1,10 @@
+image: quay.io/packit/packit
+
+srpm_build:
+  stage: build
+  script:
+  - packit srpm
+  artifacts:
+    paths:
+      - "*.src.rpm"
+    expire_in: 1 week
