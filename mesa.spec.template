@@ -412,7 +412,7 @@ Mesa EGL/GL libraries and Gallium/OpenCL/Vulkan drivers for FEX-emu roots file s
 cp %{SOURCE1} docs/
 
 # patch VERSION to contain the package version
-echo %{version} > VERSIOn
+echo %{version} > VERSION
 
 %build
 # ensure standard Rust compiler flags are set
