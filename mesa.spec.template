@@ -16,10 +16,9 @@
 %dnl keep kmsro to package all unconditionally created dri driver symlinks
 %global with_kmsro  1
 
-%dnl build va/vdpau/xa/teflon/nine to avoid issues with vanished packages
+%dnl build va/vdpau/teflon to avoid issues with vanished packages
 %global with_vdpau  1
 %global with_va     1
-%global with_nine   1
 
 %ifnarch %{ix86}
 %global with_teflon 1
@@ -38,7 +37,6 @@
 %if !0%{?rhel}
 %global with_r300 1
 %global with_r600 1
-%global with_nine 1
 %global with_nouveau 1
 %if 0%{?with_vulkan_hw}
 %global with_nvk %{with_vulkan_hw}
@@ -59,7 +57,6 @@
 %global with_crocus 1
 %global with_i915   1
 %global with_iris   1
-%global with_xa     1
 %global with_intel_clc 1
 %global intel_platform_vulkan %{?with_vulkan_hw:,intel,intel_hasvk}%{!?with_vulkan_hw:%{nil}}
 %endif
@@ -81,7 +78,6 @@
 %global with_freedreno 1
 %global with_panfrost  1
 %global with_v3d       1
-%global with_xa        1
 %if 0%{?with_asahi}
 %ifarch x86_64 %{ix86}
 %global with_asahi_fex_emu_overlay 1
@@ -201,6 +197,7 @@ BuildRequires:  rustfmt
 BuildRequires:  (crate(paste) >= 1.0.14 with crate(paste) < 2)
 BuildRequires:  (crate(proc-macro2) >= 1.0.86 with crate(proc-macro2) < 2)
 BuildRequires:  (crate(quote) >= 1.0.33 with crate(quote) < 2)
+BuildRequires:  (crate(rustc-hash) >= 2.1.1 with crate(rustc-hash) < 3)
 BuildRequires:  (crate(syn/clone-impls) >= 2.0.86 with crate(syn/clone-impls) < 3)
 BuildRequires:  (crate(unicode-ident) >= 1.0.12 with crate(unicode-ident) < 2)
 %endif
@@ -227,6 +224,10 @@ BuildRequires:  pkgconfig(vulkan)
 Summary:        Mesa driver filesystem
 Provides:       mesa-dri-filesystem = %{?epoch:%{epoch}:}%{version}-%{release}
 Obsoletes:      mesa-omx-drivers < %{?epoch:%{epoch}:}%{version}-%{release}
+Obsoletes:      mesa-libd3d < %{?epoch:%{epoch}:}%{version}-%{release}
+Obsoletes:      mesa-libd3d-devel < %{?epoch:%{epoch}:}%{version}-%{release}
+Obsoletes:      mesa-libxatracker < %{?epoch:%{epoch}:}%{version}-%{release}
+Obsoletes:      mesa-libxatracker-devel < %{?epoch:%{epoch}:}%{version}-%{release}
 
 %description filesystem
 %{summary}.
@@ -322,25 +323,6 @@ Provides:       libgbm-devel%{?_isa}
 %description libgbm-devel
 %{summary}.
 
-%if 0%{?with_xa}
-%package libxatracker
-Summary:        Mesa XA state tracker
-Provides:       libxatracker
-Provides:       libxatracker%{?_isa}
-
-%description libxatracker
-%{summary}.
-
-%package libxatracker-devel
-Summary:        Mesa XA state tracker development package
-Requires:       %{name}-libxatracker%{?_isa} = %{?epoch:%{epoch}:}%{version}-%{release}
-Provides:       libxatracker-devel
-Provides:       libxatracker-devel%{?_isa}
-
-%description libxatracker-devel
-%{summary}.
-%endif
-
 %if 0%{?with_opencl}
 %package libOpenCL
 Summary:        Mesa OpenCL runtime library
@@ -365,21 +347,6 @@ Requires:       %{name}-libOpenCL%{?_isa} = %{?epoch:%{epoch}:}%{version}-%{rele
 Summary:        Mesa TensorFlow Lite delegate
 
 %description libTeflon
-%{summary}.
-%endif
-
-%if 0%{?with_nine}
-%package libd3d
-Summary:        Mesa Direct3D9 state tracker
-
-%description libd3d
-%{summary}.
-
-%package libd3d-devel
-Summary:        Mesa Direct3D9 state tracker development package
-Requires:       %{name}-libd3d%{?_isa} = %{?epoch:%{epoch}:}%{version}-%{release}
-
-%description libd3d-devel
 %{summary}.
 %endif
 
@@ -443,10 +410,9 @@ export MESON_PACKAGE_CACHE_DIR="%{cargo_registry}/"
 %else
   -Dgallium-drivers=llvmpipe,virgl \
 %endif
+  -Dgallium-mediafoundation=disabled \
   -Dgallium-vdpau=%{?with_vdpau:enabled}%{!?with_vdpau:disabled} \
   -Dgallium-va=%{?with_va:enabled}%{!?with_va:disabled} \
-  -Dgallium-xa=%{?with_xa:enabled}%{!?with_xa:disabled} \
-  -Dgallium-nine=%{?with_nine:true}%{!?with_nine:false} \
   -Dteflon=%{?with_teflon:true}%{!?with_teflon:false} \
 %if 0%{?with_opencl}
   -Dgallium-rusticl=true \
@@ -615,23 +581,6 @@ install -Dpm0644 -t %{buildroot}%{_datadir}/fex-emu/overlays/ mesa-%{_arch}.erof
 %{_includedir}/gbm_backend_abi.h
 %{_libdir}/pkgconfig/gbm.pc
 
-%if 0%{?with_xa}
-%files libxatracker
-%if 0%{?with_hardware}
-%{_libdir}/libxatracker.so.2
-%{_libdir}/libxatracker.so.2.*
-%endif
-
-%files libxatracker-devel
-%if 0%{?with_hardware}
-%{_libdir}/libxatracker.so
-%{_includedir}/xa_tracker.h
-%{_includedir}/xa_composite.h
-%{_includedir}/xa_context.h
-%{_libdir}/pkgconfig/xatracker.pc
-%endif
-%endif
-
 %if 0%{?with_teflon}
 %files libTeflon
 %{_libdir}/libteflon.so
@@ -644,17 +593,6 @@ install -Dpm0644 -t %{buildroot}%{_datadir}/fex-emu/overlays/ mesa-%{_arch}.erof
 
 %files libOpenCL-devel
 %{_libdir}/libRusticlOpenCL.so
-%endif
-
-%if 0%{?with_nine}
-%files libd3d
-%dir %{_libdir}/d3d/
-%{_libdir}/d3d/*.so.*
-
-%files libd3d-devel
-%{_libdir}/pkgconfig/d3d.pc
-%{_includedir}/d3dadapter/
-%{_libdir}/d3d/*.so
 %endif
 
 %files dri-drivers
