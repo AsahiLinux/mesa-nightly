@@ -105,7 +105,7 @@
 Name:           mesa
 Summary:        Mesa graphics libraries
 Version:        25.2.0~20250508^386decce418
-Release:        1%{?dist}
+Release:        2%{?dist}
 License:        MIT AND BSD-3-Clause AND SGI-B-2.0
 URL:            http://www.mesa3d.org
 
@@ -120,6 +120,8 @@ Patch10:        gnome-shell-glthread-disable.patch
 
 Patch101:       0001-asahi-fix-various-issues-with-virtgpu.patch
 Patch102:       0002-asahi-enable-virtgpu.patch
+
+Patch200:       mesa-mr-36241.patch
 
 BuildRequires:  meson >= 1.3.0
 BuildRequires:  gcc

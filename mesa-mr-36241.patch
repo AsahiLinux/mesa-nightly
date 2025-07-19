@@ -1,0 +1,158 @@
+From 2f8b13d173d0d0d504103c3cf399b277338eb32c Mon Sep 17 00:00:00 2001
+From: Asahi Lina <lina@asahilina.net>
+Date: Sun, 20 Jul 2025 00:22:30 +0900
+Subject: [PATCH] asahi: Ensure shared BOs have a prime_fd
+
+The GL driver expects special sync handling when a buffer is newly
+exported, and also requires that bo->prime_fd be set so the batch code
+can use it later. Add a function to do this for the KMS export case,
+which otherwise would not need a PRIME fd.
+
+agx_bo_export() then becomes a simple dup of bo->prime_fd (which is
+probably marginally faster than redoing drmPrimeHandleToFD() anyway).
+
+The thread safety story here is that as long as we do all this the first
+time a BO is exported (in any way), there is no way for another thread
+to have gotten ahold of the BO already, so no need for extra locking.
+
+This does not affect hk, since it doesn't rely on bo->prime_fd for
+anything. It also doesn't affect the timestamp BO and other special
+cases.
+
+Fixes: 067d820c9db0 ("asahi: Mark KMS exported resource BOs as shared")
+Closes: https://gitlab.freedesktop.org/mesa/mesa/-/issues/13563
+Signed-off-by: Asahi Lina <lina@asahilina.net>
+---
+ src/asahi/lib/agx_bo.h               |  1 +
+ src/asahi/lib/agx_device.c           | 66 +++++++++++++++++-----------
+ src/gallium/drivers/asahi/agx_pipe.c | 10 +----
+ 3 files changed, 43 insertions(+), 34 deletions(-)
+
+diff --git a/src/asahi/lib/agx_bo.h b/src/asahi/lib/agx_bo.h
+index 4752cd5fb035c..d9eed7ac5e1a5 100644
+--- a/src/asahi/lib/agx_bo.h
++++ b/src/asahi/lib/agx_bo.h
+@@ -132,6 +132,7 @@ void agx_bo_reference(struct agx_bo *bo);
+ void agx_bo_unreference(struct agx_device *dev, struct agx_bo *bo);
+ struct agx_bo *agx_bo_import(struct agx_device *dev, int fd);
+ int agx_bo_export(struct agx_device *dev, struct agx_bo *bo);
++void agx_bo_make_shared(struct agx_device *dev, struct agx_bo *bo);
+ 
+ void agx_bo_free(struct agx_device *dev, struct agx_bo *bo);
+ struct agx_bo *agx_bo_cache_fetch(struct agx_device *dev, size_t size,
+diff --git a/src/asahi/lib/agx_device.c b/src/asahi/lib/agx_device.c
+index fbc42db621c49..d7740b249c64b 100644
+--- a/src/asahi/lib/agx_device.c
++++ b/src/asahi/lib/agx_device.c
+@@ -339,6 +339,13 @@ agx_bo_import(struct agx_device *dev, int fd)
+          p_atomic_set(&bo->refcnt, 1);
+       else
+          agx_bo_reference(bo);
++
++      /* If this bo came back to us via import, it had better
++       * been marked shared to begin with.
++       */
++      assert(bo->flags & AGX_BO_SHAREABLE);
++      assert(bo->flags & AGX_BO_SHARED);
++      assert(bo->prime_fd != -1);
+    }
+    pthread_mutex_unlock(&dev->bo_map_lock);
+ 
+@@ -357,40 +364,47 @@ error:
+    return NULL;
+ }
+ 
+-int
+-agx_bo_export(struct agx_device *dev, struct agx_bo *bo)
++void
++agx_bo_make_shared(struct agx_device *dev, struct agx_bo *bo)
+ {
+-   int fd;
+-
+    assert(bo->flags & AGX_BO_SHAREABLE);
++   if (bo->flags & AGX_BO_SHARED) {
++      assert(bo->prime_fd >= 0);
++      return;
++   }
+ 
+-   if (drmPrimeHandleToFD(dev->fd, bo->handle, DRM_CLOEXEC, &fd))
+-      return -1;
++   bo->flags |= AGX_BO_SHARED;
++   assert(bo->prime_fd == -1);
+ 
+-   if (!(bo->flags & AGX_BO_SHARED)) {
+-      bo->flags |= AGX_BO_SHARED;
+-      assert(bo->prime_fd == -1);
+-      bo->prime_fd = os_dupfd_cloexec(fd);
++   int ret =
++      drmPrimeHandleToFD(dev->fd, bo->handle, DRM_CLOEXEC, &bo->prime_fd);
++   assert(ret == 0);
++   assert(bo->prime_fd >= 0);
+ 
+-      /* If there is a pending writer to this BO, import it into the buffer
+-       * for implicit sync.
+-       */
+-      uint64_t writer = p_atomic_read_relaxed(&bo->writer);
+-      if (writer) {
+-         int out_sync_fd = -1;
+-         int ret = drmSyncobjExportSyncFile(
+-            dev->fd, agx_bo_writer_syncobj(writer), &out_sync_fd);
+-         assert(ret >= 0);
+-         assert(out_sync_fd >= 0);
+-
+-         ret = agx_import_sync_file(dev, bo, out_sync_fd);
+-         assert(ret >= 0);
+-         close(out_sync_fd);
+-      }
++   /* If there is a pending writer to this BO, import it into the buffer
++    * for implicit sync.
++    */
++   uint64_t writer = p_atomic_read_relaxed(&bo->writer);
++   if (writer) {
++      int out_sync_fd = -1;
++      int ret = drmSyncobjExportSyncFile(dev->fd, agx_bo_writer_syncobj(writer),
++                                         &out_sync_fd);
++      assert(ret >= 0);
++      assert(out_sync_fd >= 0);
++
++      ret = agx_import_sync_file(dev, bo, out_sync_fd);
++      assert(ret >= 0);
++      close(out_sync_fd);
+    }
++}
++
++int
++agx_bo_export(struct agx_device *dev, struct agx_bo *bo)
++{
++   agx_bo_make_shared(dev, bo);
+ 
+    assert(bo->prime_fd >= 0);
+-   return fd;
++   return os_dupfd_cloexec(bo->prime_fd);
+ }
+ 
+ static int
+diff --git a/src/gallium/drivers/asahi/agx_pipe.c b/src/gallium/drivers/asahi/agx_pipe.c
+index 2f60d9ef4446a..64fcff5072dc0 100644
+--- a/src/gallium/drivers/asahi/agx_pipe.c
++++ b/src/gallium/drivers/asahi/agx_pipe.c
+@@ -260,14 +260,8 @@ agx_resource_get_handle(struct pipe_screen *pscreen, struct pipe_context *ctx,
+    } else if (handle->type == WINSYS_HANDLE_TYPE_KMS) {
+       rsrc_debug(rsrc, "Get handle: %p (KMS)\n", rsrc);
+ 
+-      /* BO must be considered shared at this point.
+-       * The seemingly redundant check exists because if the BO is
+-       * already shared then mutating the BO would be potentially
+-       * racy.
+-       */
+-      assert(rsrc->bo->flags & AGX_BO_SHAREABLE);
+-      if (!(rsrc->bo->flags & AGX_BO_SHARED))
+-         rsrc->bo->flags |= AGX_BO_SHARED;
++      /* BO must be considered shared at this point. */
++      agx_bo_make_shared(dev, rsrc->bo);
+ 
+       handle->handle = rsrc->bo->handle;
+    } else if (handle->type == WINSYS_HANDLE_TYPE_FD) {
+-- 
+GitLab
+
