@@ -1,3 +1,4 @@
 [submodule "mesa"]
 	path = mesa
-	url = https://gitlab.freedesktop.org/mesa/mesa.git
+	url = https://gitlab.freedesktop.org/alyssa/mesa.git/
+	branch = agx/virtio
